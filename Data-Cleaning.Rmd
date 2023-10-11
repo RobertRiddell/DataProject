@@ -14,7 +14,8 @@ library(tidyverse)
 ```
 
 ```{r}
-
+dat <- read_csv('Melbourne_housing_FULL.csv')
+dat
 ```
 
 ```{r}
