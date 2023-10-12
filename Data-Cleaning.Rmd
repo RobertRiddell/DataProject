@@ -1,7 +1,7 @@
 ---
-title: "Data-Cleaning"
+title: "Data Cleaning"
 author: "R.Riddell"
-date: "2023-10-09"
+date: "`r Sys.Date()`"
 output: html_document
 ---
 
@@ -11,14 +11,114 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r packages}
 library(tidyverse)
+library(rio)
+```
+ABS DATA https://www.abs.gov.au/methodologies/data-region-methodology/2011-22#data-downloads
+Melbourne Housing https://www.kaggle.com/datasets/anthonypino/melbourne-housing-market
+postcode to LGA https://www.abs.gov.au/AUSSTATS/abs@.nsf/DetailsPage/1270.0.55.006July%202011?OpenDocument
+
+```{r}
+source("funs/xl_reader.R")
+house_data <- read_csv("data/Melbourne_housing_FULL.csv")
+path <- "data/ABS-Data/"
+ABS_Data <- excel_reader(path)
+economy_industry <- ABS_Data$economy_industry.xlsx
+education_employment <- ABS_Data$education_employment.xlsx
+postcode_to_LGA <- ABS_Data$postcode_to_LGA.xls
+```
+
+
+```{r}
+postcode_to_LGA <- postcode_to_LGA[,-c(1,5,6)]
+postcode_in_data <- unique(house_data$Postcode)
+postcode_to_LGA <- subset(postcode_to_LGA, !is.na(POSTCODE))
+postcode_to_LGA <- postcode_to_LGA %>% 
+  filter(POSTCODE %in% postcode_in_data) %>% 
+  select(-LGA_NAME_2011)
+names(postcode_to_LGA)[names(postcode_to_LGA) == "LGA_CODE_2011"] <- "Code"
+names(postcode_to_LGA)[names(postcode_to_LGA) == "POSTCODE"] <- "Postcode"
+postcode_to_LGA$Postcode <- as.double(postcode_to_LGA$Postcode)
+economy_industry <- subset(economy_industry, Year >=2016 & Year <= 2018)
+
+#Number of established house transfers (no.)
+total_house_transfers <- economy_industry[c('Code', 'Label', 'Year', 'Number of established house transfers (no.)')]
+total_house_transfers$`Number of established house transfers (no.)` <- as.integer(total_house_transfers$`Number of established house transfers (no.)`)
+total_house_transfers <- total_house_transfers %>% 
+  group_by(Code, Label) %>% 
+  summarise(ave_house_transfers = mean(`Number of established house transfers (no.)`, na.rm=TRUE))
+total_house_transfers <- left_join(postcode_to_LGA, total_house_transfers, by = 'Code')
+
+#total registered motor vehicles
+total_motor_vehicles <- economy_industry[c('Code', 'Label', 'Year', 'Total registered motor vehicles (no.)')]
+total_motor_vehicles$`Total registered motor vehicles (no.)` <- as.integer(total_motor_vehicles$`Total registered motor vehicles (no.)`)
+total_motor_vehicles <- total_motor_vehicles %>% 
+  group_by(Code, Label) %>% 
+  summarise(ave_registered_vehicles = mean(`Total registered motor vehicles (no.)`, na.rm=TRUE))
+total_motor_vehicles <- left_join(postcode_to_LGA, total_motor_vehicles, by = 'Code')
+
+#Registered motor vehicles - Year of manufacture - at 31 January
+motor_vehicles_age <- economy_industry[c('Code', 'Label', 'Year',"Less than 5 years (no.)", "5 to 10 years (no.)", "Over 10 years (no.)")]
+motor_vehicles_age$`Less than 5 years (no.)` <- as.integer(motor_vehicles_age$`Less than 5 years (no.)`)
+motor_vehicles_age$`5 to 10 years (no.)` <- as.integer(motor_vehicles_age$`5 to 10 years (no.)`)
+motor_vehicles_age$`Over 10 years (no.)` <- as.integer(motor_vehicles_age$`Over 10 years (no.)`)
+motor_vehicles_age <- motor_vehicles_age %>% 
+  group_by(Code, Label) %>% 
+  mutate(total_vehicles = `Less than 5 years (no.)`+ `5 to 10 years (no.)` + `Over 10 years (no.)`) %>% 
+  summarise(ratio_less_five_years_car_age = round(`Less than 5 years (no.)`/total_vehicles,2))
+motor_vehicles_age <- left_join(postcode_to_LGA, motor_vehicles_age, by = 'Code')
+```
+
+
+```{r}
+education_employment <- subset(education_employment, Year >=2016 & Year <= 2018)
+
+#Number of employee jobs - total
+total_number_jobs <- education_employment[c('Code', 'Label', 'Year', 'Number of employee jobs - total')]
+total_number_jobs$`Number of employee jobs - total` <- as.integer(total_number_jobs$`Number of employee jobs - total`)
+total_number_jobs <- total_number_jobs %>% 
+  group_by(Code, Label) %>% 
+  summarise(ave_total_jobs = mean(`Number of employee jobs - total`, na.rm=TRUE))
+total_number_jobs <- left_join(postcode_to_LGA, total_number_jobs, by = 'Code')
+
+#Occupation of employed persons - Persons aged 15 years and over - Census		2016	
+employment_occupation <- education_employment[,c(1:3,82:90)]
+employment_occupation <- employment_occupation %>% 
+  filter(Year == 2016) %>% 
+  pivot_longer(cols = -c(1:3), names_to = 'occupation', values_to = 'perc_of_jobs') %>% 
+  mutate(occupation = sub("\\(%)", "", occupation)) %>% 
+  mutate(perc_of_jobs = as.double(perc_of_jobs)) %>% 
+  group_by(Code, Label) %>% 
+  mutate(highest_number = if_else(perc_of_jobs == max(perc_of_jobs),1,0)) %>% 
+  filter(highest_number == 1) %>% 
+  select(-perc_of_jobs, -highest_number, -Year)
+popular_occupation <- left_join(postcode_to_LGA, employment_occupation, by = 'Code')
+
+
+#Occupation that has most jobs Jobs in Australia - year ended 30 June																					
+employment_category <- education_employment[,c(1:3,15:33)]
+employment_category <- employment_category %>% 
+  pivot_longer(cols = starts_with('Number'), names_to = 'category', values_to = 'number_of_jobs') %>% 
+  mutate(category = sub("^Number of employee jobs - ", "", category)) %>% 
+  group_by(Code, Label, category) %>% 
+  mutate(number_of_jobs = as.integer(number_of_jobs)) %>% 
+  summarise(ave_number_jobs = mean(number_of_jobs, na.rm=TRUE)) %>% 
+  ungroup() %>% 
+  group_by(Code, Label) %>% 
+  mutate(highest_number = if_else(ave_number_jobs == max(ave_number_jobs),1,0)) %>% 
+  filter(highest_number == 1) %>% 
+  select(-ave_number_jobs, -highest_number)
+popular_category <- left_join(postcode_to_LGA, employment_category, by = 'Code')
+
+
 ```
 
 ```{r}
-dat <- read_csv('Melbourne_housing_FULL.csv')
-dat
-```
-
-```{r}
-
+house_data <- left_join(house_data, total_house_transfers, by = 'Postcode')
+house_data <- left_join(house_data, total_motor_vehicles, by = c('Postcode', 'Label', 'Code'))
+house_data <- left_join(house_data, motor_vehicles_age, by = c('Postcode', 'Label', 'Code'))
+house_data <- left_join(house_data, total_number_jobs, by = c('Postcode', 'Label', 'Code'))
+house_data <- left_join(house_data, popular_category, by = c('Postcode', 'Label', 'Code'))
+house_data <- left_join(house_data, popular_occupation, by = c('Postcode', 'Label', 'Code'))
+write.csv(house_data, "out/aggregated_data.csv")
 ```
 

@@ -1,0 +1,243 @@
+---
+title: "Analysis and Report"
+author: "R.Riddell"
+date: "2023-10-09"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 1
+    toc_float:
+      collapsed: no
+      smooth_scroll: no
+    theme: flatly
+    highlight: tango
+  word_document: default
+  pdf_document:
+    toc: yes
+    toc_depth: '1'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages, warning=TRUE, include=FALSE}
+library(tidyverse)
+library(broom)
+library(caret)
+library(modelr)
+library(randomForest)
+```
+ABS DATA https://www.abs.gov.au/methodologies/data-region-methodology/2011-22#data-downloads
+Melbourne Housing https://www.kaggle.com/datasets/anthonypino/melbourne-housing-market
+postcode to LGA https://www.abs.gov.au/AUSSTATS/abs@.nsf/DetailsPage/1270.0.55.006July%202011?OpenDocument
+```{r, warning=TRUE, include=FALSE}
+dat <- read_csv('out/aggregated_data.csv')
+```
+
+# Introduction
+The housing market changes can have ripple effects though large sections of the economy, the effects can be seen in areas like consumer spending or have a direct impact on the construction industry. Being able to have a broader understanding of the factors that affect housing prices can better equip peoples ability to make decisions when entering or exiting the market [https://www.rba.gov.au/speeches/2019/sp-gov-2019-03-06.html#:~:text=They%20influence%20consumer%20spending%2C%20including,value%20of%20collateral%20for%20loans.]. This report will examine house prices in relation to some broader factors that surround the housing market between 2016 - 2018 and seek to shed some light on the key drivers at that time. 
+
+# Data
+The data used is from publicly available data sets and can be found at [ABS DATA](https://www.abs.gov.au/methodologies/data-region-methodology/2011-22#data-downloads), 
+[Melbourne Housing](https://www.kaggle.com/datasets/anthonypino/melbourne-housing-market), [Postcode/ LGA data](https://www.abs.gov.au/AUSSTATS/abs@.nsf/DetailsPage/1270.0.55.006July%202011?OpenDocument). Datasets were aggreated to create a single data set that is used for this exploration and analysis. 
+
+## NA Treatment
+
+```{r NA treatment, warning=TRUE, include=FALSE}
+dat <- dat[sample(nrow(dat), size=10000),]
+
+na_columns <- data.frame((colSums(is.na(dat)) / nrow(dat)) * 100)
+colnames(na_columns) <- 'NA_Perc'
+na_columns %>% 
+  arrange(-NA_Perc)
+cols_to_drop <- c('BuildingArea', 'YearBuilt', 'Landsize', 'Car', 'Bathroom', 'Bedroom2', 'Lattitude', 'Longtitude', 'Code', 'Address', 'SellerG', 'Postcode', 'Suburb')
+dat <-  dat %>% 
+  select(-1,-cols_to_drop) %>% 
+  filter(!is.na(Price))
+
+sapply(dat, function(x) n_distinct(x))
+dat <- dat[complete.cases(dat),]
+dat$Date <- as.Date(dat$Date, format = "%d/%m/%Y")
+dat$Date <- format(dat$Date, "%Y")
+```
+
+After assessing all the columns that had more than 20% null values the decision was made to drop them. It didn't make any clear sense to add 0 into these columns, the values were then assessed against the whole data set and against the other data points in their suburb. The range was reasonably significant on both counts so mean imputation didn't seem practical. The observations that included no final price were also dropped, as we are investigating the factors associated with price I didn't want to synthetically create target values. Seven additional values were dropped as they had some NA values in the Postcode/ Property Count This has left the data set with `r length(dat)` observations and `r length(colnames(dat))` variables. 
+The columns dropped were `r cols_to_drop`.
+
+also dropping sellerG, Address and Postcode plus changing date to only be year
+
+# Explatory Analysis
+## Distribution
+The numeric values were analysed using histograms. All were relatively normal, the average number of house transfers shows a reasonable normal distribution with some areas having significantly more. The ratio of cars under five years showing some right hand skewness implying some areas have a significant proportion of cars less than five years old. There is no obvious reason to drop any of these values based on their distribution. 
+```{r histograms, warning=TRUE, include=FALSE}
+source("funs/gg_hist.R")
+
+numeric_vars <- dat %>% 
+  select(where(is.numeric),- c(Price)) %>% 
+  names(.)
+
+for (i in seq_along(numeric_vars)) {
+  print(gg_hist(dat, numeric_vars[i]))
+}
+```
+
+```{r histograms2, echo=FALSE}
+ave_house_transfers_hist <- gg_hist(dat, 'ave_house_transfers')+labs(title = 'Average House Transfers', subtitle = '')
+ratio_less_five_years_car_age_hist <- gg_hist(dat, 'ratio_less_five_years_car_age')+labs(title = 'Ratio of cars less than 5 years old', subtitle = '') 
+ggsave(plot = ave_house_transfers_hist, filename = "figs/ave_house_transfers_hist.jpeg")
+ggsave(plot = ratio_less_five_years_car_age_hist, filename = "figs/ratio_less_five_years_car_age_hist.jpeg")
+ave_house_transfers_hist
+ratio_less_five_years_car_age_hist
+```
+
+The distribution of some of categorical variables was assessed against the price. In some cases the distribution was significant across each category and showed some potential outlines. In particular the most common occupation shows that "Professionals" have significantly more buying potential in some cases but their median is somewhat similar to the other professions. When looking closer though the data set is largely skewed by Professionals as they account for 86% of the responses. The Region Name also appears to be a factor in the price with the regions who have the higher medians also have the biggest distribution, this may point to the fact their is a house in every region that is valued at the same price but it could be assumed not of the same quality, size or age. Looking into the distribution of values in the data set there does seem to be three regions providing rough 80% of the data, these areas are Southern Metropolitan, Northern Metropolitan and Eastern. Metropolitan.
+```{r box_plots, warning=TRUE, include=FALSE}
+source("funs/gg_box.R")
+categorical_var_names <- c("Type", "Method", "Regionname", "Label", "category", "occupation")
+for (i in seq_along(categorical_var_names)) {
+  print(gg_box(dat, categorical_var_names[i]))
+}
+dat %>% 
+  mutate(count = n()) %>% 
+  group_by(Regionname) %>% 
+  summarise(n = n()/count) %>% 
+  unique() %>% 
+  arrange(-n)
+```
+
+```{r box_plots2, echo=FALSE}
+occupation_box <- gg_box(dat, 'occupation')+labs(title = 'Most Common Occupations', subtitle = '')
+Regionname_box <- gg_box(dat, 'Regionname')+labs(title = 'Region Name', subtitle = '')
+ggsave(plot = occupation_box, filename = "figs/occupation_box.jpeg")
+ggsave(plot = Regionname_box, filename = "figs/Regionname_box.jpeg")
+occupation_box
+Regionname_box
+```
+
+
+## Relationships
+The correlation coefficient of the numeric values against the price was calculated. The Rooms variable showed the highest positive correlation with a result of 0.44 showing that a property with more rooms may result in a higher sale price. The strongest negative correlation was the Distance from the CBD, this shows a slight relationship that when a house is further from the CBD the sale price will be less. Purely from the correlation coefficients the Property count and average total jobs have been excluded as they are between -.10 and .10.  
+
+```{r correlation, warning=TRUE, include=FALSE}
+correlations <- numeric()
+
+dependent_var <- "Price"
+
+for (col in numeric_vars) {
+  correlation <- cor(dat[[dependent_var]], dat[[col]])
+  correlations <- c(correlations, correlation)
+}
+
+correlation_result <- data.frame(
+  Variable = numeric_vars,
+  Correlation = correlations
+)
+
+correlation_result %>% 
+  arrange(-Correlation)
+
+cols_to_drop <- c('Propertycount', 'ave_total_jobs')
+dat <-  dat %>% 
+  select(-1,-cols_to_drop)
+```
+
+
+# Assumption
+Before attempting modelling it is important to check data to ensure it fits the assumptions of the models. This process helps to select the models that are most appropriate to the data, it will ensure a more valid result and the model should be more reflective of the data and therefore more accurate. As a starting point a linear model has been created with the price as the target variable and it will be tested against the assumption for the linear model. 
+
+```{r linear model, warning=TRUE, include=FALSE}
+Price = dat$Price
+dat_no_price <- dat %>% 
+  select(-Price)
+dummy_encoded <- model.matrix(~ . - 1, data = dat_no_price)
+fit <- lm(Price ~ ., dat)
+tidy(fit, conf.int = T)
+summary(fit)
+
+```
+
+## Continous Variable
+We are going to use a linear regression model so it is important that the target variable is continuous.
+
+## Outliers
+Using cooks distance and examining the residual plots we can see some significant issues with how the data is represented by a linear model. The Residual plot has an obvious pattern where is should be more random With some. The Q-Q plot does not follow the line and has a significant upwards curve. 
+```{r outliers, eval=FALSE, warning=TRUE, include=FALSE}
+cook <- cooks.distance(fit)
+
+ggplot(NULL, aes(points, cook)) +
+  geom_point() +
+  ggrepel::geom_text_repel(aes(), colour = "navy")
+```
+```{r residual plots,  echo=FALSE}
+par(mfrow = c(2, 2))
+plot(fit)
+```
+```{r independence, eval=FALSE, warning=TRUE, include=FALSE}
+car::durbinWatsonTest(fit)
+```
+As the residual plots showed the data was not well represented by linear modelling it doesn't make sense to continue testing the linear modelling assumptions against this data. Other tests that could be completed are for homoscedasticity, near zero variance or multicolinearity. This information has assisted in understanding what regression modelling techniques may be suitable, as such the models chosen to test will be random forest regression and KNN regression. KNN regression assumes that the closer a data point is to another the more similar it will be. Random forest regression (decision trees) assumes that data can be split into subsets reasonable distinctly. 
+
+# Modelling
+The data is split randomly into two groups of testing and training, the testing group is 20% of the observations and the training is 80%. The training data is then used to build the models, once models are built the testing data can be used to assess the RMSE and R squared. In the model building phase there is also repeated cross validation. This divides the data into into a number of partitions, with some partitions not used for model building. The unused partitions can then be used as an internal test and the mean performance is reported across the iterations. Based on compute and time based factors the larger data set has been re sampled down to 10,000 and the split 80/20 into training and testing groups.
+
+```{r train/ test, warning=TRUE, include=FALSE}
+set.seed(42)
+dat_sample <- dat
+split <- resample_partition(dat_sample, c(train = 0.8, test = 0.2))
+train <- data.frame(split$train)
+test <- data.frame(split$test)
+```
+```{r rf model,  echo=FALSE}
+tune <- expand.grid(mtry = seq(1,35,5))
+rfmodel <- train(Price ~ .,
+                 data = train,
+                 method = "rf",
+                 #trControl = trainControl("repeatedcv", number = 10, repeats = 3),
+                 ntree = 10, 
+                 nodesize = 6, #min node size
+                 maxnodes = 10, #max node size
+                 tuneGrid = tune,
+                 importance = TRUE)
+predictions_rf = predict(rfmodel, newdata = test)
+rf.metrics <- data.frame(
+  model = 'Random Forest',
+  RMSE = RMSE(pred = predictions_rf,obs = test$Price),
+  R2 = R2(pred = predictions_rf,obs = test$Price)
+)
+plot(varImp(rfmodel))
+```
+
+```{r knn model,  echo=FALSE}
+knn_mdl <-  train(Price~ ., 
+                  data = train, 
+                  method = "knn",
+                  preProc = c('center', 'scale'))
+                  #trControl = trainControl("repeatedcv", number = 10, repeats = 3),
+                  #tuneLength=5)
+
+predictions_knn = predict(knn_mdl, newdata = test)
+knn.metrics <- data.frame(
+  model = 'KNN',
+  RMSE = RMSE(pred = predictions_knn,obs = test$Price),
+  R2 = R2(pred = predictions_knn,obs = test$Price)
+)
+plot(knn_mdl)
+```
+
+# Results
+## Random Forest
+After applying the regression model to the data we are able to extract a variable importance graph. This graph shows the variables that the model has found to be most important in determining price. The variables that were reported with the highest importance for this data was the type of house being a unit, how many house transfers there had been in the larger area, the region being Southern Metropolitan, what the ratio of cars under 5 years was and the most popular area people worked being professional, scientific and technical services. The house being a unit was by far the most important in predicting price and it could be valuable to investigate the relationship between units, price and the rest of the data to better understand why there is a strong link. 
+
+## KNN Regression
+The KNN model showed a decrease in RMSE as the number of neighbors were increased, this could should some over fitting with low numbers as it is relying too heavily on the data adjacent to each point. As seen with the KNN plot after the value of K exceeds 11 the RMSE begins to go up again, this is an indication that 13 is the ideal number of neighbors for this data. 
+
+```{r metrics, include=FALSE}
+metrics <- rbind(rf.metrics, knn.metrics)
+```
+
+# Conclusion
+When comparing the two models RMSE and R squared values the random forest returns slightly worse with and RMSE of `r metrics[1,'RMSE']` and an R squared of `r metrics[1,'R2']`. While the results from the KNN method was `r metrics[2,'RMSE']` and an R squared of `r metrics[2,'R2']`. This shows that neither model is particularly well suited to the data and the values we have do not do a great job at predicting house prices. The variable importance may give us the best indication of the drivers behind house prices. Interestingly the number of house transfers over that period was used when making the predictions, an interesting angle to investigate could be how a quiet market vs a busy market affects house prices. A further analysis into the car age and car type could be interesting into unpacking how and when people are spending their money and if their is more of a correlation between cars of certain types/ ages being associated with  with areas that have higher selling houses. 
+
+
+
