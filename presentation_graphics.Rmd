@@ -1,0 +1,65 @@
+---
+title: "Untitled"
+author: "Robert Riddell"
+date: "13/10/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+```{r}
+dat <- read_csv('out/aggregated_data.csv')
+#dat <- dat[sample(nrow(dat), size=30000),]
+
+na_columns <- data.frame((colSums(is.na(dat)) / nrow(dat)) * 100)
+colnames(na_columns) <- 'NA_Perc'
+cols_to_drop <- c('BuildingArea', 'YearBuilt', 'Landsize', 'Car', 'Bathroom', 'Bedroom2', 'Code', 'Address', 'SellerG', 'Postcode', 'CouncilArea')
+dat <-  dat %>% 
+  select(-1,-cols_to_drop) %>% 
+  filter(!is.na(Price))
+
+dat <- dat[complete.cases(dat),]
+dat$Date <- as.Date(dat$Date, format = "%d/%m/%Y")
+dat$Year <- format(dat$Date, "%Y")
+dat$Month <- format(dat$Date, "%m")
+```
+```{r}
+range(dat$Price)
+```
+
+```{r}
+dat %>% 
+  mutate(HouseT = case_when(Type == 'h' ~ 'House',
+                            Type == 't' ~ 'Townhouse',
+                            Type == 'u' ~ 'Unit. Duplex')) %>% 
+  ggplot(aes(Date, Price, col = HouseT, group = HouseT)) + geom_smooth(se=F, size = 2) + 
+  theme_classic() +
+  labs(title = "Price Trend in Housing Types",
+       y = "Price ($)",
+       x = "Sale Date",
+       col = "House Type") +
+  scale_y_continuous(labels = scales::comma)
+```
+
+
+```{r}
+age <- dat %>% 
+  group_by(ratio_less_five_years_car_age, ave_registered_vehicles, Year) %>% 
+  summarise(Price = mean(Price)) %>%
+  mutate(Percent = case_when(ratio_less_five_years_car_age <= 0.25 ~ "Under 25%",
+                                  ratio_less_five_years_car_age > 0.25 & ratio_less_five_years_car_age <= 0.35 ~ '25%-35%',
+                                  ratio_less_five_years_car_age > 0.35 & ratio_less_five_years_car_age < 0.45 ~ '35%-45%' ,
+                                  ratio_less_five_years_car_age >= 0.45 ~ 'Greater 45%'))
+age$Percent <- factor(age$Percent, levels = c('Under 25%', '25%-35%', '35%-45%', 'Greater 45%'))
+ggplot(age, aes(ave_registered_vehicles, Price, col = Percent)) + geom_point(size = 4) +
+  theme_classic() +
+  labs(title = "Price in Relation to Car Quantity and Age",
+       y = "Price ($)",
+       x = "Number of Registered Vehicles") +
+  scale_x_continuous(labels = scales::comma) +
+  scale_y_continuous(labels = scales::comma)
+
+```
+
