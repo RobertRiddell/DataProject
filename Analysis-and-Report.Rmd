@@ -28,7 +28,7 @@ library(caret)
 library(modelr)
 library(randomForest)
 library(scales)
-library(gridExtra)                                        
+library(gridExtra)
 ```
 
 ```{r Read Data, warning=TRUE, include=FALSE}
@@ -43,7 +43,7 @@ The housing market changes can have ripple effects through large sections of the
 The data in this report is from publicly available sources, including the ABS (Australia Bureau of Statistics) and kaggle. The data can be found at [ABS DATA](https://www.abs.gov.au/methodologies/data-region-methodology/2011-22#data-downloads), 
 [Melbourne Housing](https://www.kaggle.com/datasets/anthonypino/melbourne-housing-market), [Postcode/ LGA data](https://www.abs.gov.au/AUSSTATS/abs@.nsf/DetailsPage/1270.0.55.006July%202011?OpenDocument). The data was aggregated to create a single data set that is used for this exploration and analysis.
 
-The 2018 Melbourne Housing data was used as the central data source. The data was then enriched with local area data that was obtained from the ABS. The two data sets couldn't be directly connected as the area identifier on the ABS data was the LGA (Local Government Area), which wasn't in the housing data. A linking table was used. This table came from an ABS source and gives the LGA code for each postcode with this information. The ABS data can be mapped to the postcode field by the LGA code and name. This can be linked to the housing data using a fragment of the council area and the postcode. This method has some risks, as the same postcode can be linked to multiple LGAs. This risk has been mitigated using the Label and Council Area values from the ABS and Housing data, respectively.
+The 2018 Melbourne Housing data was used as the central data source. The data was then enriched with local area data that was obtained from the ABS. The two data sets couldn't be directly connected as the area identifier on the ABS data was the LGA (Local Government Area), which wasn't in the housing data. A linking table was used, this table came from an ABS source and gives the LGA code for each postcode with this information. The ABS data can be mapped to the postcode field by the LGA code and name. This can be linked to the housing data using a fragment of the council area and the postcode. This method has some risks, as the same postcode can be linked to multiple LGAs. This risk has been mitigated using the Label and Council Area values from the ABS and Housing data, respectively.
 
 The additional data from the ABS was centred around the Economy/Industry and Education/Employment based on the LGA. This information was collected at the same time as the Melbourne Housing data. When multiple years of was data avaiable, the data was averaged over 2016 - 2018. There could be additional work to look at this data in direct relation to the sale data and if lead/ lag from those values could be a predictor or a response. The LGA grouped all values, and the additional variables added were:
 

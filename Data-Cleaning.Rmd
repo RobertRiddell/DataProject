@@ -59,6 +59,7 @@ names(postcode_to_LGA)[names(postcode_to_LGA) == "LGA_NAME_2011"] <- "Label"
 # Changing the postcode to a number instead of character
 postcode_to_LGA$Postcode <- as.double(postcode_to_LGA$Postcode)
 
+# Removing a (C) or (S) Symbol from the label so it will match the fragment from the house data Council Area
 postcode_to_LGA <- postcode_to_LGA %>% 
   mutate(Label = sub(" \\((C|S)\\)", "", Label)) 
 ```
