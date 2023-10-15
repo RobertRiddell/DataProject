@@ -43,7 +43,7 @@ The housing market changes can have ripple effects through large sections of the
 The data in this report is from publicly available sources, including the ABS (Australia Bureau of Statistics) and kaggle. The data can be found at [ABS DATA](https://www.abs.gov.au/methodologies/data-region-methodology/2011-22#data-downloads), 
 [Melbourne Housing](https://www.kaggle.com/datasets/anthonypino/melbourne-housing-market), [Postcode/ LGA data](https://www.abs.gov.au/AUSSTATS/abs@.nsf/DetailsPage/1270.0.55.006July%202011?OpenDocument). The data was aggregated to create a single data set that is used for this exploration and analysis.
 
-The 2018 Melbourne Housing data was used as the central data source. The data was then enriched with local area data that was obtained from the ABS. The two data sets couldn't be directly connected as the area identifier on the ABS data was the LGA (Local Government Area), which wasn't in the housing data. It could have been possible to map the Label from the ABS data to the Council Area in the housing data; this would have required some text manipulation. Instead, a linking table was used. This table came from an ABS source and gives the LGA code for each postcode. With this information, the ABS data can be mapped through to the postcode field in the Melbourne housing data. The risks with this method were the postcode/LGA mapping table was produced in 2011, and I have not verified how the postcode and LGA actually line up.
+The 2018 Melbourne Housing data was used as the central data source. The data was then enriched with local area data that was obtained from the ABS. The two data sets couldn't be directly connected as the area identifier on the ABS data was the LGA (Local Government Area), which wasn't in the housing data. A linking table was used. This table came from an ABS source and gives the LGA code for each postcode with this information. The ABS data can be mapped to the postcode field by the LGA code and name. This can be linked to the housing data using a fragment of the council area and the postcode. This method has some risks, as the same postcode can be linked to multiple LGAs. This risk has been mitigated using the Label and Council Area values from the ABS and Housing data, respectively.
 
 The additional data from the ABS was centred around the Economy/Industry and Education/Employment based on the LGA. This information was collected at the same time as the Melbourne Housing data. When multiple years of was data avaiable, the data was averaged over 2016 - 2018. There could be additional work to look at this data in direct relation to the sale data and if lead/ lag from those values could be a predictor or a response. The LGA grouped all values, and the additional variables added were:
 
@@ -64,9 +64,6 @@ The additional data from the ABS was centred around the Economy/Industry and Edu
 # Setting a seed to make the random sample consistent
 set.seed(42)
 
-# Subsetting the data to speed up the analysis
-dat <- dat[sample(nrow(dat), size=30000),]
-
 # Viewing the percentage of NA values in all of the columns
 na_columns <- data.frame((colSums(is.na(dat)) / nrow(dat)) * 100)
 colnames(na_columns) <- 'NA_Perc'
@@ -76,7 +73,7 @@ na_columns %>%
 # Dropping columns based on NA values or other reasons
 cols_to_drop <- c('BuildingArea', 'YearBuilt', 'Landsize', 'Car', 'Bathroom', 'Bedroom2', 'Lattitude', 'Longtitude', 'Code', 'Address', 'SellerG', 'Postcode', 'Suburb', 'CouncilArea')
 dat <-  dat %>% 
-  select(-1,-cols_to_drop) %>% 
+  select(-cols_to_drop) %>% 
   filter(!is.na(Price))
 
 # Viewing how many distinct values apear in each column
@@ -109,7 +106,6 @@ numeric_vars <- dat %>%
   select(where(is.numeric),- c(Price)) %>% 
   names(.)
 ```
-
 
 ```{r histograms, eval=FALSE, warning=TRUE, include=FALSE}
 # Creating histograms for the numeric values to assess distribution
@@ -219,7 +215,7 @@ correlation_result %>%
 # Dropping columns that have a correlation between -.10 and .10
 cols_to_drop <- c('Propertycount', 'ave_total_jobs')
 dat <-  dat %>% 
-  select(-1,-cols_to_drop)
+  select(-cols_to_drop)
 ```
 
 
@@ -278,14 +274,14 @@ As the residual plots showed the data was not well represented by linear modelli
 This information has assisted in understanding what regression modelling techniques may be suitable; as such, the models chosen to test will be random forest regression and KNN regression. KNN regression assumes that the closer a data point is to another, the more similar it will be. Random forest regression (decision trees) assumes that data can be split into subsets reasonably distinctly.
 
 # Modelling
-The data is split randomly into two groups of testing and training; the testing group is 20% of the observations, and the training is 80%. The training data is then used to build the models; once models are built, the testing data can be used to assess the RMSE and R squared. In the model-building phase, there is also repeated cross-validation. This divides the data into several partitions, with some partitions not used for model building. The unused partitions can then be used as an internal test, and the mean performance is reported across the iterations. The larger data set has been re-sampled to 30,000 observations and split 80/20 into training and testing groups based on compute and time-based factors.
+The data is split randomly into two groups of testing and training; the testing group is 20% of the observations, and the training is 80%. The training data is then used to build the models; once models are built, the testing data can be used to assess the RMSE and R squared. In the model-building phase, there is also repeated cross-validation. This divides the data into several partitions, with some partitions not used for model building. The unused partitions can then be used as an internal test, and the mean performance is reported across the iterations. 
 ```{r train/ test, warning=FALSE, include=FALSE}
-
 # Splitting the data into training and testing elemnets
 split <- resample_partition(dat, c(train = 0.8, test = 0.2))
 train <- data.frame(split$train)
 test <- data.frame(split$test)
 ```
+
 ```{r rf model, eval=FALSE, warning=FALSE, include=FALSE}
 # Setting the range of variables that will be randomly sample at each split
 tune <- expand.grid(mtry = seq(1,35,5))
@@ -304,6 +300,7 @@ rfmodel <- train(Price ~ .,
 # Saving the model output to the out/models folder
 save(rfmodel, file = "out/models/rfmodel.Rdata")
 ```
+
 ```{r rf metrics, include=FALSE}
 # Reading in the random forest model
 load("out/models/rfmodel.Rdata")
@@ -322,6 +319,17 @@ rf.metrics <- data.frame(
 rf_varimp <- plot(varImp(rfmodel), top = 10)
 ```
 
+```{r eval=FALSE, include=FALSE}
+#dat_without_features <- dat %>% 
+#  select(-c(ratio_less_five_years_car_age, ave_house_transfers, category, 
+#            occupation, ave_registered_vehicles))
+
+#split <- resample_partition(dat_without_features, c(train = 0.8, test = 0.2))
+#train <- data.frame(split$train)
+#test <- data.frame(split$test)
+
+```
+ 
 ```{r knn model, eval=FALSE, warning=FALSE, include=FALSE}
 # Running the KNN model on the training data
 knn_mdl <-  train(Price~ ., 
@@ -332,7 +340,9 @@ knn_mdl <-  train(Price~ .,
                   tuneLength=5)
 
 # Saving the model into the out/models folder
-save(knn_mdl, file = "out/models/.Rdata")
+save(knn_mdl, file = "out/models/knn_mdl.Rdata")
+#save(knn_mdl, file = "out/models/knn_mdl-withoutfeatures.Rdata")
+
 ```
 
 ```{r knn predictions, include=FALSE}
@@ -353,7 +363,7 @@ knn.metrics <- data.frame(
 
 # Results
 ### Random Forest
-We can extract a variable importance graph after applying the regression model to the data. This graph shows the variables the model found to be most important in determining price. The variables reported with the highest importance for this data were the type of house being a unit, how many house transfers there had been in the larger area, and the Distance from the CDB and the Southern Metropolitan region. The house being a unit was by far the most important in predicting price, and it could be valuable to investigate the relationship between units, price and the rest of the data to understand better why there is a strong link. 
+We can extract a variable importance graph after applying the regression model to the data. This graph shows the variables the model found to be most important in determining price. The variables reported with the highest importance for this data were the number of rooms, type of house being a unit and how many house transfers there had been in the larger area. These three variable are very important in predicting price, and it could be valuable to investigate the specific relationship between rooms, units house transfers and price to better understand why there is a strong link. 
 
 ```{r echo=FALSE, fig.align='center'}
 # Plotting the variable importance
@@ -361,7 +371,7 @@ plot(varImp(rfmodel), top = 10, main = "Random Forest - Variable Importance", su
 ```
 
 ### KNN Regression
-The KNN model showed a decrease in RMSE as the number of neighbours was increased. This could show some overfitting with low numbers as it relies too heavily on the data adjacent to each point. The elbow plot indicates that the KNN model performed best with a k value of seven. When a k of 9 was used, the RMSE jumped and decreased again with a k of 13. As the k value increases, the RMSE will also increase, suggesting that k of 7 will be the best value. More hyperparameter tuning could be attempted with a k of 8 or greater than 13 to ensure that the lowest RMSE has been reached. 
+The KNN model showed a decrease in RMSE as the number of neighbours was increased. This could show some overfitting with low numbers as it relies too heavily on the data adjacent to each point. The elbow plot indicates that the KNN model performed best with a k value of nine. As the k value increases, the RMSE seems to also increase, suggesting that k of nine will be the best value. More hyperparameter tuning could be attempted with a k of ten could be tested as the tuning went from nine to 11.
 ```{r plotting knn, echo=FALSE, fig.align='center'}
 # Plotting the KNN model
 plot(knn_mdl, main = "KNN Elbow Plot", sub = "figure 6")
@@ -375,13 +385,12 @@ metrics <- rbind(rf.metrics, knn.metrics)
 # Formatting and rounding the model metrics
 metrics$RMSE <- format(round(as.numeric(metrics$RMSE), 0), nsmall = 0, big.mark = ",")
 metrics$R2 <- round(as.numeric(metrics$R2), 2)
-train
 ```
 
 ### Comparison
 When comparing the two models RMSE and R squared values the random forest returns worse with and RMSE of `r metrics[1,'RMSE']` and an R squared of `r metrics[1,'R2']`. In comparison, the results from the KNN method were `r metrics[2,'RMSE']` and an R squared of `r metrics[2,'R2']`. This shows that neither model is particularly well suited to the data, and our values could better predict house prices.The KNN does have better performance but both could still be improved with further feature engineering and hyper parameter tuning. 
 
 # Conclusion
-With neither model showing solid results and the best RMSE of nearly half a million dollars, it can be concluded that this data set is not an accurate predictor of house prices. When assigning the value that the new variables have created, we can investigate the variable importance from the random forest model. Interestingly, the number of house transfers over that period was the second most important when making the predictions. An interesting angle to investigate could be how a quiet market vs a busy market affects house prices. The fifth most important variable was the ratio of vehicles under five years old. A further analysis into the vehicles type (Car, Campervans, Motorcycles) could be interesting in unpacking how and when people spend their money and if there is more of a correlation between vehicles of certain types/ ages associated with areas with higher selling houses. The number of registered vehicles was also seventh in importance, and the data suggests that once the number of registered vehicles exceeds 150,000, house prices will be, on average, less than 1 million dollars. Around 100,000 registered vehicles, with 35% being less than five years old, show a strong cluster with average prices over 1.5 million dollars. The variables for the most popular category and occupation stayed in the data set but didn't have much of a relationship to house price. The total number of jobs had such a small correlation it was dropped earlier in the analysis. 
+With neither model showing solid results and the best RMSE of nearly ~$360,000, it can be concluded that this data set is not an accurate predictor of house prices. When assigning the value that the new variables have created, we can investigate the variable importance from the random forest model. Interestingly, the number of house transfers over that period was the third most important when making the predictions. An interesting angle to investigate could be how a quiet market vs a busy market affects house prices. The fourth most important variable was the ratio of vehicles under five years old. A further analysis into the vehicles type (Car, Campervans, Motorcycles) could be interesting in unpacking how and when people spend their money and if there is more of a correlation between vehicles of certain types/ ages associated with areas with higher selling houses. The areas where the most popular job category were Professional, scientific and technical services, which was also seen as relevant predictor and was the fifth most important. The number of registered vehicles was also seventh in importance, and the data suggests that once the number of registered vehicles exceeds 150,000, house prices will be, on average, less than 1 million dollars. Around 100,000 registered vehicles, with 35% being less than five years old, show a strong cluster with average prices over 1.5 million dollars. The variables for the most popular occupation stayed in the data set but didn't have much of a relationship to house price. The total number of jobs had such a small correlation it was dropped earlier in the analysis. 
 
-As a final test, the KNN model was built on a data set that excluded the ABS features. This data set returned an RMSE of 431,310 and an R sqaured of 0.54. This result shows that the ABS data adds additional detail to the modelling process. However, the best results are still inadequate to give a clear picture of the drivers around house pricing.
+As a final test, the KNN model was built on a data set that excluded the ABS features. This data set returned an RMSE of 354,666 and an R sqaured of 0.64. This result shows that the ABS data may add some additional detail to the modelling process but does not improve the evaluation metrics. However, the distinction between the three sets of evaluation metrics is inadequate to give a clear picture of the drivers around house pricing.

@@ -117,14 +117,15 @@ motor_vehicles_age <- motor_vehicles_age %>%
   group_by(Code, Label) %>% 
   summarise(less_5 = mean(`Less than 5 years (no.)`),
             total = mean(total_vehicles)) %>% 
-  mutate(ratio_less_five_years_car_age = round(less_5/total,2))
+  mutate(ratio_less_five_years_car_age = round(less_5/total,2)) %>% 
+  select(-c(less_5, total))
 
 
 # Joining to the postcode mapping table based on the LGA 
 motor_vehicles_age <- left_join(postcode_to_LGA, motor_vehicles_age, by = c('Code', 'Label'))
 ```
 
-```{r}
+```{r warning=FALSE}
 # Filtering the ABS data so the years are the same as the Melborune hosing data
 education_employment <- subset(education_employment, Year >=2016 & Year <= 2018)
 
@@ -165,6 +166,7 @@ employment_occupation <- employment_occupation %>%
   group_by(Code, Label) %>% 
   # Add another column that indicates which row has the highest number per LGA 
   mutate(highest_number = if_else(perc_of_jobs == max(perc_of_jobs),1,0)) %>%
+  ungroup() %>% 
   # Filters data to only include the occupations with the highest percentage
   filter(highest_number == 1) %>% 
   # Remove the percentage, highest percentage indicator and the year
@@ -190,6 +192,7 @@ employment_category <- employment_category %>%
   group_by(Code, Label) %>% 
   mutate(highest_number = if_else(ave_number_jobs == max(ave_number_jobs),1,0)) %>% 
   filter(highest_number == 1) %>% 
+  ungroup() %>% 
   select(-ave_number_jobs, -highest_number)
 popular_category <- left_join(postcode_to_LGA, employment_category, by = c('Code', 'Label'))
 ```
@@ -204,18 +207,6 @@ house_data <- left_join(house_data, popular_category, by = c('Postcode', 'Label'
 house_data <- left_join(house_data, popular_occupation, by = c('Postcode', 'Label', 'Code'))
 
 # Writing to the out/ folder as the full aggregated data set that is then used for the analysis and report
-write.csv(house_data, "out/aggregated_data.csv")
+write.csv(house_data, "out/aggregated_data.csv", row.names = FALSE)
 ```
-
-
-
-
-
-
-
-
-
-
-
-
 
