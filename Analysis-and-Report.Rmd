@@ -226,7 +226,7 @@ dat <-  dat %>%
 # Assumption
 Before attempting modelling, it is essential to check the data to ensure it fits the models' assumptions. This process helps to select the models that are most appropriate to the data, it will provide a more valid result and the model should be more reflective of the data and therefore more accurate. As a starting point, a linear model has been created with the price as the target variable, and it will be tested against the assumption for the linear model.
 ```{r linear model, eval=FALSE, warning=FALSE, include=FALSE}
-# Creating a elemnt that has the Price in it and dropping Price from the larger dataframe
+# Creating a element that has the Price in it and dropping Price from the larger dataframe
 Price = dat$Price
 dat_no_price <- dat %>% 
   select(-Price)
